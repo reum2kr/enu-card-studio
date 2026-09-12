@@ -117,6 +117,7 @@
     color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
   }
   .tpl-btn-primary:hover{background:var(--orange-deep);}
+  .tpl-btn-primary:disabled{opacity:.5;cursor:not-allowed;}
   .tpl-hint{
     display:none;font-size:12px;color:var(--danger);margin-top:6px;
   }
@@ -359,7 +360,7 @@
     }
   }
 
-  function drawFoodImage(plate){
+  function drawFoodImage(plate, canvasW, canvasH){
     const rx = plate.plateRx * 0.94, ry = plate.plateRy * 0.9;
     if(!state.foodImage) {
       return; // nothing to place yet — the plate artwork itself already shows an empty plate
@@ -372,7 +373,15 @@
     // box around the plate without ever cropping the photo itself.
     const targetW = rx * 3.1;
     const targetH = ry * 4.3;
-    const scale = Math.min(targetW / bbox.sw, targetH / bbox.sh);
+    const fillScale = Math.min(targetW / bbox.sw, targetH / bbox.sh);
+    // Hard safety cap, independent of the "fill nicely" target above: a
+    // photo with little/no background padding (bbox ≈ whole image) must
+    // never be allowed to balloon past a sane size just because the target
+    // box assumes typical padding to trim. Whichever scale is smaller wins.
+    const maxW = canvasW * 0.58;
+    const maxH = canvasH * 0.40;
+    const capScale = Math.min(maxW / bbox.sw, maxH / bbox.sh);
+    const scale = Math.min(fillScale, capScale);
     const dw = bbox.sw * scale, dh = bbox.sh * scale;
     const centerX = plate.plateCx + rx * 0.16; // nudge right — food was reading as shifted left
     const dx = centerX - dw / 2, dy = plate.plateCy - dh / 2;
@@ -458,7 +467,7 @@
     canvas.width = w;
     canvas.height = h;
     const plate = drawBaseIllustration(w, h);
-    drawFoodImage(plate);
+    drawFoodImage(plate, w, h);
     drawCaption(w, h);
   }
 
@@ -487,6 +496,7 @@
     }
 
     fileError.classList.remove('show');
+    saveTemplateBtn.disabled = true; // guard against saving a template before the image finishes loading
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
@@ -495,13 +505,20 @@
         state.foodImageSrc = e.target.result;
         state.foodImageBBox = computeContentBBox(img);
         uploadBtnLabel.textContent = file.name;
+        saveTemplateBtn.disabled = false;
         render();
       };
       img.onerror = () => {
         fileError.textContent = '이미지를 읽는 데 실패했어요. 다른 파일을 시도해주세요.';
         fileError.classList.add('show');
+        saveTemplateBtn.disabled = false;
       };
       img.src = e.target.result;
+    };
+    reader.onerror = () => {
+      fileError.textContent = '파일을 읽는 데 실패했어요. 다시 시도해주세요.';
+      fileError.classList.add('show');
+      saveTemplateBtn.disabled = false;
     };
     reader.readAsDataURL(file);
   });
